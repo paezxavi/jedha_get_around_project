@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+jedha_getaround__instructions.ipynb
+
+# Credentials for the shared MLflow stack. On the Spaces these values come from Hugging Face
+# secrets, never from a file baked into a layer. .env.example carries the key names.
+.env
+
+# MLflow local runtime state, if a run is ever pointed at a local store instead of the server.
+mlflow.db
+mlartifacts/
+mlruns/

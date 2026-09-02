@@ -1,0 +1,10 @@
+# Fitting and registering the pricing model.
+# Heavier than the API's list on purpose: this one needs the MLflow *client*, which the API
+# also needs, plus boto3 — the tracking server runs with --no-serve-artifacts, so the model
+# bytes travel straight between this machine and R2, never through the server.
+scikit-learn==1.9.0
+pandas==2.3.3
+numpy==2.5.2
+mlflow==3.15.2
+boto3==1.43.36              # MLflow reaches R2 through its S3 artifact repo
+python-dotenv==1.2.2        # read by load_dotenv() in train.py

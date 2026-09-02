@@ -1,0 +1,11 @@
+# Everything here would otherwise be swept into the image by "COPY . ".
+
+# Bytecode compiled for the host, useless in the image
+__pycache__/
+*.py[cod]
+
+Dockerfile
+.dockerignore
+
+# Secrets: on the Space they come from HF, never from a file baked into a layer
+.env

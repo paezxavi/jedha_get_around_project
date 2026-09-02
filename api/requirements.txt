@@ -1,0 +1,15 @@
+# FastAPI pricing service (/predict) — deployed on a CPU-only HF Space.
+#
+# scikit-learn is pinned to the version that FITTED the pipeline. Unpickling under a
+# different minor version works and only warns, which is precisely the risk: a silent change
+# of behaviour in a served model is the failure nobody notices. The same pin is declared in
+# the model's own pip_requirements by training/train.py.
+scikit-learn==1.9.0
+pandas==2.3.3
+numpy==2.5.2
+mlflow==3.15.2              # pull the model from the registry by alias
+boto3==1.43.36              # MLflow reaches R2 through its S3 artifact repo
+fastapi==0.141.1
+uvicorn[standard]==0.52.4
+pydantic==2.13.5
+python-dotenv==1.2.2        # read by load_dotenv() in app.py (local only)

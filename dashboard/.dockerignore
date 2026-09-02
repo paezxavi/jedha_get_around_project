@@ -1,0 +1,8 @@
+# Everything here would otherwise be swept into the image by "COPY . ".
+
+# Bytecode compiled for the host, useless in the image
+__pycache__/
+*.py[cod]
+
+Dockerfile
+.dockerignore

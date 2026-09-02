@@ -1,0 +1,8 @@
+# Streamlit dashboard — deployed on an HF Space.
+# No scikit-learn and no model here: this page is the DELAY analysis, which is pure pandas.
+# The pricing model lives behind the API Space and is not called from this page.
+streamlit==1.63.0
+pandas==2.3.3
+numpy==2.5.2
+plotly==7.0.0
+openpyxl==3.1.5      # read the .xlsx delay file

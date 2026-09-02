@@ -1,0 +1,10 @@
+# Streamlit follows the visitor's system theme by default. That is the wrong default for a
+# dashboard shown in a meeting: a laptop in dark mode projects a dark page in front of the
+# room. Pinning "light" makes the app look the same everywhere.
+#
+# Read from the working directory, which is why the file sits next to app.py: the container
+# runs from $HOME/app, and locally you run from dashboard/.
+[theme]
+base = "light"
+primaryColor = "#2a78d6"          # the same blue as the notebook's charts
+textColor = "#31333F"
