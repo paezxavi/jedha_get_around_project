@@ -1,0 +1,10 @@
+# MLflow tracking server — deployed on an HF Space (Docker)
+# Backend store: Neon (PostgreSQL) | Artifact store: Cloudflare R2 (S3-compatible)
+#
+# Pinned to the same MLflow the two clients use (training/requirements.txt,
+# api/requirements.txt): the registry's REST API is versioned, and a server ahead of its
+# clients answers with fields they will not read.
+mlflow==3.15.2
+psycopg2-binary==2.9.12   # PostgreSQL driver for the Neon backend store
+boto3==1.43.36            # S3 access for the artifact store
+gunicorn==23.0.0

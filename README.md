@@ -44,7 +44,7 @@ flowchart LR
     C[("get_around_pricing_project.csv<br/>4 843 cars")] --> T["training/train.py"]
     T -->|params, metrics| N[("Neon<br/>PostgreSQL")]
     T -->|model artifact| R[("Cloudflare R2")]
-    N -. backend store .- M["MLflow server<br/>Docker Space"]
+    N -. backend store .- M["MLflow server<br/>private Docker Space"]
     R -. artifact store .- M
     M -->|"models:/…@champion"| A["FastAPI /predict<br/>Docker Space"]
     R ==>|model bytes| A
@@ -53,9 +53,8 @@ flowchart LR
     O([car owner]) --> A
 ```
 
-Two Hugging Face Docker Spaces of this project's own, each with its own `Dockerfile` and its own
-`requirements.txt`, plus the MLflow stack shared with the *tomato-ripeness* project. The split is
-deliberate:
+Three Hugging Face Docker Spaces, each with its own `Dockerfile` and its own `requirements.txt`,
+and a Neon database and R2 bucket that belong to this project alone. The split is deliberate:
 
 - **the model never leaves the registry.** `training/train.py` logs the fitted pipeline and
   registers it; the API loads it by **alias** and only ever calls `.predict(...)`. It reads no
@@ -74,7 +73,11 @@ deliberate:
   751 KB file shipped in its image, so the page starts in seconds and every figure on it is
   recomputed live — no number can be a stale constant copied out of the notebook.
 - MLflow runs with `--no-serve-artifacts`: it hands out an `s3://` URI and the model bytes travel
-  **straight from R2** to the API, never through the tracking server.
+  **straight from R2** to the API, never through the tracking server. That is why both clients
+  carry `boto3` and the server stays responsive on the smallest hardware.
+- **the stack is this project's own.** Its own tracking Space, its own Neon database, its own R2
+  bucket — nothing is shared with another project, so revoking any credential here affects this
+  project and no other.
 
 ## Repository layout
 
@@ -83,6 +86,7 @@ getaround_analysis.ipynb    the analysis — sections 1 to 7, delay and pricing
 training/train.py           fit the pricing model, log it, register it, move the alias
 api/                        FastAPI /predict service          (Docker Space)
 dashboard/                  Streamlit delay dashboard         (Docker Space)
+mlflow_server/              MLflow tracking server            (private Docker Space)
 data/                       the two source files, 1.2 MB, committed
 images/                     the four figures, also embedded in the notebook
 requirements.txt            pinned versions for the notebook
