@@ -22,6 +22,9 @@ ENV PORT=7860
 # --allowed-hosts "*" : the Space is served behind Hugging Face's proxy, so the Host header
 #   is never the one MLflow binds to; without this every request is rejected as a DNS
 #   rebinding attempt.
+# --cors-allowed-origins : for the same reason the server does not recognise its own public
+#   address, and blocks the POST requests of its own UI as cross-origin (403) -- the
+#   experiment page then shows "failed to load chart data".
 # --no-serve-artifacts : the server hands out an s3:// URI and never proxies the bytes. The
 #   training client uploads straight to R2, the API downloads straight from R2, and this
 #   server only ever moves metadata.
@@ -31,4 +34,5 @@ CMD mlflow server \
     --host 0.0.0.0 \
     --port "$PORT" \
     --allowed-hosts "*" \
+    --cors-allowed-origins "https://lambla-getaround-mlflow.hf.space" \
     --no-serve-artifacts
