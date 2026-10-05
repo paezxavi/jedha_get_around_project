@@ -1,21 +1,19 @@
 # Getaround — the analysis notebook.
 # Install with:  python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 #
-# The two deployed services have their own, much smaller, requirements files:
+# The other parts have their own requirements files:
+#   training/requirements.txt   scikit-learn + the MLflow client, to fit and register the model
 #   api/requirements.txt        scikit-learn + FastAPI, no notebook tooling
 #   dashboard/requirements.txt  streamlit + pandas, no model at all
 
 # --- Notebook & data manipulation ---
 pandas==2.3.3               # 2.x, not 3.x: mlflow and streamlit both pin pandas<3
 numpy==2.5.2
-openpyxl==3.1.5             # read get_around_delay_analysis.xlsx
 ipykernel==7.3.0            # Jupyter kernel for getaround_analysis.ipynb
 
 # --- Machine learning ---
 scikit-learn==1.9.0         # the pricing pipeline; api/requirements.txt pins the SAME version,
-                            # because the artefact is unpickled there
-joblib==1.6.0               # writes api/model.joblib
-mlflow==3.15.2              # experiment tracking for the six model runs of section 6
+                            # because the model is loaded there
 
 # --- Visualisation ---
 plotly==7.0.0               # every chart in the notebook and in the dashboard

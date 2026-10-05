@@ -8,6 +8,7 @@ scikit-learn==1.9.0
 pandas==2.3.3
 numpy==2.5.2
 mlflow==3.15.2              # pull the model from the registry by alias
+skops==0.14.0               # how MLflow stores the model; 0.16 refuses to load it by default
 boto3==1.43.36              # MLflow reaches R2 through its S3 artifact repo
 fastapi==0.141.1
 uvicorn[standard]==0.52.4

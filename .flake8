@@ -1,0 +1,4 @@
+[flake8]
+# PEP8 allows a team to raise the line limit from 79 up to 99; this project uses 99.
+max-line-length = 99
+exclude = .venv,.git,__pycache__

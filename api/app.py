@@ -13,12 +13,14 @@ alias move in the registry, not a redeployment of this image.
 
 import os
 from contextlib import asynccontextmanager
+from string import Template
 
 import mlflow
+from mlflow.tracking import MlflowClient
 import pandas as pd
 import uvicorn
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 
@@ -39,6 +41,8 @@ MODEL = None
 # model's own logged signature rather than from a literal here -- see the lifespan below.
 FEATURES = None
 DTYPES = None
+# The champion's held-out MAE, read from its run: /health hands it to the dashboard.
+TEST_MAE = None
 
 # Two real rows of the training file, used as the example in /docs and in the README so a
 # visitor can copy one and get an answer without inventing thirteen values.
@@ -54,20 +58,20 @@ EXAMPLE = [
 # h1 title. The limitation belongs here rather than in a footnote -- three quarters of what
 # this model knows comes from two columns an owner cannot change, so it answers "what is my
 # car worth" and not "what should I do about it", and a pricing endpoint read as the second
-# is a misleading one.
-DESCRIPTION = """
+# is a misleading one. The $-placeholders are the champion's own metrics, read from its MLflow
+# run at startup, so the page describes the model actually served and holds no figure of its own.
+DESCRIPTION = Template("""
 # Getaround Pricing API
 
-Suggests a **daily rental price in euros** for a car, learned from the 4 840 cars in
+Suggests a **daily rental price in euros** for a car, learned from the $rows cars in
 Getaround's pricing dataset.
 
-On a held-out fifth of that data the model is wrong by **€10.59 on average**, and by **€7.12
-for half the cars**, against a median price of €120. Charging every car the same price is
-wrong by €24.13, so this is about twice as accurate as no model at all.
+On a held-out fifth of that data the model is wrong by **€$mae on average**, and by **€$median
+for half the cars**. Charging every car the median price is wrong by €$baseline.
 
-**It predicts what owners *do* charge for a car like this one.** 75% of what it knows comes
-from `engine_power` and `mileage`; the seven equipment options together are under 10%. Read
-it as a market rate for a given car, not as a list of things to change.
+**It predicts what owners *do* charge for a car like this one.** Most of what it knows comes
+from `engine_power` and `mileage`; the equipment options weigh little. Read it as a market
+rate for a given car, not as a list of things to change.
 
 ---
 
@@ -103,7 +107,8 @@ endpoint answers for any car — including one whose brand is not in the trainin
 
 ```bash
 curl -i -H "Content-Type: application/json" -X POST \\
-  -d '{"input": [[140411, 100, "Citroën", "diesel", "black", "convertible", true, true, false, false, true, true, true]]}' \\
+  -d '{"input": [[140411, 100, "Citroën", "diesel", "black", "convertible",
+                  true, true, false, false, true, true, true]]}' \\
   https://lambla-getaround-pricing-api.hf.space/predict
 ```
 
@@ -117,19 +122,24 @@ response = requests.post(
     json={"input": [[140411, 100, "Citroën", "diesel", "black", "convertible",
                      True, True, False, False, True, True, True]]},
 )
-print(response.json())      # {"prediction": [107.94]}
+print(response.json())      # {"prediction": [107.91]}
 ```
+
+**Errors** — a car that does not hold 13 values, or a value that cannot be read as its
+column's type (a word where `mileage` expects a number), is answered with a **422** and a
+message naming the problem, never with a 500.
 
 ---
 
 ## `GET /health`
 
-Liveness, plus which model URI was loaded and whether it is in memory.
+Liveness, plus which model URI was loaded, whether it is in memory, the 13 columns in
+order and the model's held-out MAE in euros.
 
 ## `GET /`
 
 Redirects here, to `/docs`.
-"""
+""")
 
 
 @asynccontextmanager
@@ -138,7 +148,7 @@ async def lifespan(app: FastAPI):
     # here is the intended behaviour: nothing else is running yet, and an API that starts
     # without a model would only answer opaque 500s. No try/except on purpose -- a failure
     # must kill the process with its traceback rather than serve a broken endpoint.
-    global MODEL, FEATURES, DTYPES
+    global MODEL, FEATURES, DTYPES, TEST_MAE
 
     print(f"Loading {MODEL_URI} ...")
     MODEL = mlflow.pyfunc.load_model(MODEL_URI)
@@ -150,6 +160,22 @@ async def lifespan(app: FastAPI):
     DTYPES = dict(zip(FEATURES, schema.pandas_types()))
     print(f"Model loaded: {len(FEATURES)} features.")
 
+    # /docs is built on its first request, after this point, so it shows these figures. The
+    # baseline is the median-price run of the same training session as the champion.
+    client = MlflowClient()
+    run = client.get_run(MODEL.metadata.run_id)
+    TEST_MAE = run.data.metrics["test_mae"]
+    baseline = client.search_runs(
+        [run.info.experiment_id],
+        filter_string="attributes.run_name = 'median price (baseline)'",
+        order_by=["attributes.start_time DESC"], max_results=1)
+    app.description = DESCRIPTION.substitute(
+        rows=f"{run.data.metrics['training_rows']:,.0f}".replace(",", " "),
+        mae=f"{run.data.metrics['test_mae']:.2f}",
+        median=f"{run.data.metrics['test_median_abs_error']:.2f}",
+        baseline=f"{baseline[0].data.metrics['test_mae']:.2f}" if baseline else "n/a",
+    )
+
     yield
 
     # Nothing to release on shutdown: no connection, no file handle, no temporary directory.
@@ -157,7 +183,6 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Getaround Pricing API",
-    description=DESCRIPTION,
     version="1.0.0",
     lifespan=lifespan,
     # ReDoc renders the same schema a second time at a second URL. The brief asks for one
@@ -173,7 +198,7 @@ class PredictionInput(BaseModel):
 
 
 class PredictionOutput(BaseModel):
-    prediction: list[float] = Field(..., examples=[[107.94, 264.36]])
+    prediction: list[float] = Field(..., examples=[[107.91, 264.38]])
 
 
 # Plumbing, not an endpoint: HF serves the Space at "/", and without this a visitor lands on
@@ -192,6 +217,7 @@ def health():
         "model_uri": MODEL_URI,
         "model_loaded": MODEL is not None,
         "features": FEATURES,
+        "test_mae": TEST_MAE,
     }
 
 
@@ -202,13 +228,22 @@ def predict(payload: PredictionInput):
     # pipeline's ColumnTransformer selects by name, so a caller who sends the thirteen values
     # in a different order would get a wrong price rather than an error. The names come from
     # the logged signature, never from a literal in this file.
+    # The brief assumes well-formed input and leaves error handling as a bonus. Without these
+    # two checks a malformed car reaches pandas and comes back as an opaque 500.
+    for i, car in enumerate(payload.input):
+        if len(car) != len(FEATURES):
+            raise HTTPException(422, f"car {i} has {len(car)} values, expected "
+                                     f"{len(FEATURES)} in this order: {', '.join(FEATURES)}")
     cars = pd.DataFrame(payload.input, columns=FEATURES)
 
     # The signature records mileage and engine_power as integers and the seven options as
     # booleans. A JSON list arrives as Python objects, so the frame comes out as `object`
     # dtype and MLflow's schema enforcement rejects it before the pipeline ever sees it.
     # Casting to the logged schema is the caller's side of the contract, done here once.
-    cars = cars.astype(DTYPES)
+    try:
+        cars = cars.astype(DTYPES)
+    except (ValueError, TypeError) as error:
+        raise HTTPException(422, f"a value does not match its column's type: {error}")
 
     return {"prediction": [round(float(price), 2) for price in MODEL.predict(cars)]}
 

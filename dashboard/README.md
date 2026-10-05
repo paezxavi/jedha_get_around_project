@@ -8,50 +8,47 @@ pinned: false
 app_port: 7860
 ---
 
-# Getaround — Minimum delay between rentals
+# Getaround — delay analysis and pricing
 
-Should a car be hidden from search results when the requested check-in is too close to the previous
-checkout? Two sliders — **how long** the minimum delay should be and **which cars** it applies to —
-and every number on the page moves with them.
+Two pages, one per audience.
 
-This page holds no model and calls no API. It is the delay analysis made interactive, recomputed
-from the raw 21 310-rental file on every interaction, so no figure on it can be a stale constant
-copied out of a notebook — which is also why it starts in seconds.
+## Delay analysis — for the product manager
 
-The same brief asks for a pricing model, and that one lives behind its own Space: the
-[pricing API](https://lambla-getaround-pricing-api.hf.space), whose `/docs` is interactive.
+Should a car be hidden from search results when a requested rental would start too soon after the
+previous one ends? Two controls — **how long** the minimum delay is and **which cars** it applies
+to — and every number on the page moves with them.
 
-## What it shows
+The page answers the product manager's four questions, one section each:
 
-1. **How many rentals the feature can reach at all.** Only 8.6% of rentals follow another rental of
-   the same car; the feature cannot touch the rest.
-2. **How often drivers are late, and whether it reaches the next driver.** The next rental's
-   cancellation rate only moves once the overlap passes an hour.
-3. **What each threshold and scope costs**, as one ratio: rentals blocked per problem avoided.
-4. **The recommendation**, and the four things these files cannot answer.
+1. **Which share of the owners' revenue could the feature affect?** At most 8.93% of ended rentals.
+2. **How many rentals would a threshold block?** A curve over every threshold, and the exact count
+   at the chosen one.
+3. **How often are drivers late for the next check-in, and what does it do to the next driver?**
+   12.6% of chained pairs overlap; long overlaps go with far more cancellations.
+4. **How many problematic cases would a threshold solve?** The same curve, on the benefit side.
 
-## The finding
+It then puts cost against benefit and recommends **30 minutes, on all cars**: the cheapest step on
+the curve, after which there is no elbow — the average cost per case solved rises at every
+threshold.
 
-**The feature's entire target is 66 rentals out of 21 310** — the cases where the previous driver
-came back more than an hour after the next check-in was due. Avoiding one costs between 10 and 25
-blocked rentals, and the ratio only worsens as the threshold grows: there is no optimum on the
-curve, only a price per avoided incident.
+Every number is recomputed from the raw 21 310-rental file on each interaction; the counting rules
+are written on the page next to the numbers they shape. This page holds no model.
 
-**"Connect cars only" is the wrong scope, for the opposite of the expected reason.** Connect drivers
-are *less* late than mobile ones — 42.9% against 61.4%. Connect is where the problem shows up
-because Connect cars are chained back-to-back three times more often, not because their drivers
-behave worse.
+## Pricing — for a car owner
 
-## Known limitations
+Describe a car and the page suggests a daily rental price. It holds no model either: it sends the
+car to the [pricing API](https://lambla-getaround-pricing-api.hf.space) `/predict`, shows the
+answer, and shows the request and the response it exchanged. The column order is read from the
+API's `/health`, and the dropdowns offer only values the model was trained on.
 
-- **No revenue figure is possible.** The pricing dataset has no car identifier, so no rental has a
-  price: every cost shown is a count of rentals standing in for euros.
-- **A blocked rental is not a lost rental** — the file cannot say whether the driver rebooked.
-- **The right-hand half of the impact chart rests on 103 pairs**, and a cancellation recorded after
-  a late checkout is a correlation: the file records no cancellation reason.
-- **The gap is capped at 12 hours** in the source file, so no longer threshold can be evaluated.
+## Configuration
+
+One optional variable, `PRICING_API_URL`, points the Pricing page at another API — a local one
+during development. It defaults to the online Space. No secret: the delay page reads files shipped
+in the image, and the API is public.
 
 ## Data
 
-`data/get_around_delay_analysis.xlsx`, shipped inside the image — 751 KB, 21 310 rentals. There is
-no database and no network call, which is why the page starts in seconds.
+`data/get_around_delay_analysis.xlsx` (21 310 rentals) for the delay page and
+`data/get_around_pricing_project.csv` (4 843 cars) for the Pricing page's dropdowns, both shipped
+inside the image.

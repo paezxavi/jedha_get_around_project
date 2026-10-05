@@ -1,204 +1,198 @@
 # Getaround — a buffer between rentals, and a price for a car
 
-Two decisions for Getaround's product team, from 21 310 rentals and 4 843 cars: **how long a
-minimum delay to impose between two rentals of the same car**, and **what a car should rent for**.
+Two decisions for Getaround: **how long a minimum delay to impose between two rentals of the same
+car**, for the product manager, and **what a car should rent for**, for its owner.
 
 Jedha *Full Stack Data Scientist* — **Block 5, Deployment** (Getaround). scikit-learn, MLflow,
 FastAPI, Streamlit, Docker, Hugging Face Spaces.
 
 | | |
 |---|---|
-| 📊 **Dashboard** | https://lambla-getaround-delay-dashboard.hf.space |
+| 📊 **Dashboard** — delay analysis and pricing | https://lambla-getaround-delay-dashboard.hf.space |
 | ⚡ **API** (`/docs` is interactive) | https://lambla-getaround-pricing-api.hf.space |
 | 📊 **MLflow server** | private on purpose — see [Security](#security) |
-| 📓 **The analysis** | [`getaround_analysis.ipynb`](getaround_analysis.ipynb) |
+| 📓 **How the pricing model was studied** | [`getaround_analysis.ipynb`](getaround_analysis.ipynb) |
 
 ## The problem
 
-A driver who brings a car back late ruins the next rental: the next driver waits, and sometimes
-cancels. Getaround's answer is to hide a car from search results when the requested check-in is too
-close to the previous checkout — which solves the friction and costs bookings.
+A driver who brings a car back late spoils the next rental: the next driver waits, and sometimes
+cancels. Getaround's answer is to hide a car from search results when a requested rental would
+start too soon after the previous one ends — which spares the next driver and costs bookings.
 
-The product manager has to decide **a threshold** and **a scope**, and asked four questions to get
-there: what share of revenue the feature would affect, how many rentals it would block, how often
-drivers are actually late, and how many problems each setting would solve.
-
-All four are answered below and in the dashboard. Two of the answers are not the expected ones:
-
-> **The feature's entire target is 66 rentals out of 21 310** — the cases where the previous driver
-> came back more than an hour after the next check-in was due, which is where the next rental's
-> cancellation rate actually moves. Avoiding one of them costs between **10 and 25 blocked
-> rentals**, and the ratio only worsens as the threshold grows. There is no optimum on the curve,
-> only a price per avoided incident.
->
-> **"Connect cars only" is the wrong scope, for the opposite of the expected reason.** Connect
-> drivers are *less* late than mobile ones — 43% against 61%. Connect is where the problem shows up
-> because Connect cars are chained back-to-back three times more often, not because their drivers
-> behave worse. Restricting the feature there costs **17.7 blocked rentals per severe case avoided
-> against 10.6** for all cars.
+The product manager has to choose a **threshold** (how long the minimum delay is) and a **scope**
+(all cars, Connect cars only — or, added here, Mobile cars only), and asked four questions to get
+there. The dashboard answers each one in its own section, then weighs cost against benefit.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    C[("get_around_pricing_project.csv<br/>4 843 cars")] --> T["training/train.py"]
+    C[("get_around_pricing_project.csv<br/>4 843 cars")] --> T["training/train.py<br/>39 candidate runs"]
     T -->|params, metrics| N[("Neon<br/>PostgreSQL")]
-    T -->|model artifact| R[("Cloudflare R2")]
-    N -. backend store .- M["MLflow server<br/>private Docker Space"]
+    T -->|winner's model| R[("Cloudflare R2")]
+    T -->|"alias @challenger"| M["MLflow server<br/>private Docker Space"]
+    P["training/promote.py<br/>after review"] -->|"alias @champion"| M
+    N -. backend store .- M
     R -. artifact store .- M
     M -->|"models:/…@champion"| A["FastAPI /predict<br/>Docker Space"]
     R ==>|model bytes| A
     X[("get_around_delay_analysis.xlsx<br/>21 310 rentals")] ==> S["Streamlit dashboard<br/>Docker Space"]
+    S -->|"Pricing page: POST /predict"| A
     U([product manager]) --> S
-    O([car owner]) --> A
+    O([car owner]) --> S
 ```
 
 Three Hugging Face Docker Spaces, each with its own `Dockerfile` and its own `requirements.txt`,
-and a Neon database and R2 bucket that belong to this project alone. The split is deliberate:
+and a Neon database and an R2 bucket that belong to this project alone.
 
-- **the model never leaves the registry.** `training/train.py` logs the fitted pipeline and
-  registers it; the API loads it by **alias** and only ever calls `.predict(...)`. It reads no
-  local model file. Promoting a new model is an alias move, not a redeployment.
-- **the API holds no feature engineering.** The logged model carries the *whole* scikit-learn
-  pipeline — scaler, one-hot encoder, regressor. A served model that reproduces its own
-  preprocessing is one that quietly stops matching its notebook the first time an encoder changes.
-- **the column contract comes from the logged signature.** The API reads the thirteen column names
-  *and their dtypes* from `MODEL.metadata.get_input_schema()`, so the order a caller must respect
-  is written once, by the training script, and never twice.
-- **the model pins its own scikit-learn version** in its `pip_requirements`, and
-  `api/requirements.txt` pins the same one. Unpickling under a different minor version works and
-  only warns, which is exactly the risk: a silent change of behaviour in a served model is the
-  failure nobody notices.
-- **the dashboard holds no model and calls no API.** The delay analysis is pure pandas over a
-  751 KB file shipped in its image, so the page starts in seconds and every figure on it is
-  recomputed live — no number can be a stale constant copied out of the notebook.
-- MLflow runs with `--no-serve-artifacts`: it hands out an `s3://` URI and the model bytes travel
-  **straight from R2** to the API, never through the tracking server. That is why both clients
-  carry `boto3` and the server stays responsive on the smallest hardware.
-- **the stack is this project's own.** Its own tracking Space, its own Neon database, its own R2
-  bucket — nothing is shared with another project, so revoking any credential here affects this
-  project and no other.
+- **Nothing reaches production without a review.** `train.py` compares every candidate in MLflow
+  and registers the winner as `challenger` — and stops there. `promote.py` prints the challenger
+  and the `champion` side by side and moves `champion` only if the challenger is better. The API
+  serves `champion` only.
+- **The model never leaves the registry.** The API loads it by **alias** at startup and only ever
+  calls `.predict(...)`. Promoting a model is an alias move and a restart, not a redeployment.
+- **The API holds no feature engineering.** The logged model carries the whole scikit-learn
+  pipeline — scaler, one-hot encoder, regressor.
+- **The column contract is written once.** The API reads the thirteen column names and their
+  dtypes from the model's logged signature; the dashboard's Pricing page reads the same order
+  from the API's `/health`. Neither holds a list of columns of its own.
+- **No figure on `/docs` is typed by hand.** The API reads the champion's error from its own
+  MLflow run at startup, so the page describes the model actually served.
+- **The served versions are pinned.** scikit-learn is pinned in the model's `pip_requirements` and
+  in `api/requirements.txt`, and so is `skops`, the library MLflow stores the model with: 0.16
+  refuses by default to load a gradient-boosting model that 0.14 loads.
+- **The dashboard's delay page holds no model.** It is pure pandas over a file shipped in its image,
+  and recomputes every number on each interaction — none of them can be a stale constant.
+- MLflow runs with `--no-serve-artifacts`: the model bytes travel **straight from R2** to the API,
+  never through the tracking server.
 
 ## Repository layout
 
 ```
-getaround_analysis.ipynb    the analysis — sections 1 to 7, delay and pricing
-training/train.py           fit the pricing model, log it, register it, move the alias
+dashboard/app.py            the two pages of the web app
+dashboard/delay.py          page 1 — the four questions and the recommendation
+dashboard/pricing.py        page 2 — a form whose car is priced by the /predict API
+dashboard/data/             the delay file and the pricing file, shipped in the image
 api/                        FastAPI /predict service          (Docker Space)
-dashboard/                  Streamlit delay dashboard         (Docker Space)
+training/train.py           evaluate every candidate, register the winner as challenger
+training/promote.py         make the challenger the champion, if it is better
 mlflow_server/              MLflow tracking server            (private Docker Space)
-data/                       the two source files, 1.2 MB, committed
-images/                     the four figures, also embedded in the notebook
-requirements.txt            pinned versions for the notebook
+getaround_analysis.ipynb    how the pricing model was studied
+data/                       the two source files, committed
+.flake8                     the PEP8 check: flake8 dashboard/ api/ training/
 .env.example                the key names the MLflow stack needs
 ```
 
 ## The data
 
-Two files, and **they cannot be joined**: the pricing file has no car identifier, so no rental can
-be given a price.
-
 | | rows | what one row is |
 |---|---|---|
-| `get_around_delay_analysis.xlsx` | 21 310 | one rental — car, check-in type, state, minutes late at checkout, and *when there was one* the previous rental and the gap to it |
+| `get_around_delay_analysis.xlsx` | 21 310 | one rental — car, check-in type, state, minutes late at checkout, and *when there was one within 12 hours* the previous rental of the same car and the planned gap to it |
 | `get_around_pricing_project.csv` | 4 843 | one car — mileage, engine power, model, fuel, colour, body type, seven equipment options, and its daily price |
 
-That missing join is the single biggest limit on the analysis, and it is why **every cost in this
-repository is a count of rentals standing in for euros**.
+The delay file carries its own documentation sheet. Each file answers its own half of the brief.
 
-Two things in the delay file look like they need a cleaning rule. Neither gets one, and the
-notebook prices both decisions:
+## How the delay analysis counts
 
-- **The delays run from 15 days early to 49 days late.** No rule is applied, because every question
-  here is answered by a *share* — how many drivers are late, how many overlap — and a share does
-  not move when a tail is trimmed. The one figure a tail would distort is a mean delay, which the
-  notebook never uses.
-- **1 700 ended rentals have no checkout time** (11.0% on mobile against 3.1% on Connect). They
-  stay in every denominator. 112 chained pairs lose their previous checkout that way and are
-  carried as a stated blind spot rather than imputed.
+Five decisions, each written on the dashboard next to the number it shapes:
 
-Three rows of the pricing file *are* dropped: a mileage of −64 km, one of 1 000 376 km, and an
-engine of 0 hp. That is 0.06% of the file, too small to change a score — they go because serving a
-prediction fitted on a negative mileage is indefensible, not because it helps.
+1. **A rental is exposed** when `time_delta_with_previous_rental_in_minutes` is filled — it follows
+   another rental of the same car by less than 12 hours. No other rental can ever be hidden.
+2. **A rental is blocked** when that planned gap is shorter than the threshold. In such a pair the
+   rule hides the later rental, so the pair is counted once, on the later rental's row.
+3. **The cost side (Q1, Q2) counts ended rentals only.** A cancelled rental earned nothing, so
+   hiding it costs nothing.
+4. **The benefit side (Q3, Q4) counts every pair**, cancelled next rentals included: a problem
+   exists whether or not the next driver went on to cancel.
+5. **A pair's scope is the check-in type written on its own row**, nothing guessed.
+
+A **problematic case** is an *overlap*: the previous driver came back after the next check-in was
+due. It needs the previous checkout time, which 112 pairs lack; they are left out of Q3 and Q4
+rather than imputed.
 
 ## What we found
 
-### Only 8.6% of rentals can be touched at all, and the real target is 66 of them
+### Q1 — at most 8.93% of the owners' revenue is exposed
 
-![Overlap impact](images/2_overlap_impact.png)
+1 612 of the 18 045 ended rentals follow another rental of the same car within 12 hours: 3.78%
+on Connect cars, 5.15% on Mobile ones. Every ended rental counts as the same revenue, since the
+file records neither a price nor a duration.
 
-**1 841 of the 21 310 rentals follow another rental of the same car.** Of the 1 729 whose previous
-checkout is recorded, half the previous drivers are late by *something* — and it usually does not
-matter. **218 actually overlap** the next check-in, and only **66 overlap by more than an hour.**
+### Q2 — a threshold blocks a part of that ceiling
 
-That last threshold is not arbitrary. The next rental's cancellation rate is **8.7% after an
-overlap under half an hour** — *below* the 15.3% baseline — and reaches **39.0% beyond two hours**.
-Two warnings belong on the same line as that number: the right-hand half of the chart rests on 103
-pairs, and a cancellation recorded after a late checkout is a correlation, since the file holds no
-cancellation reason.
+At 30 minutes the rule blocks **244 ended rentals (1.35%)**; at 60 minutes, 358 (1.98%). The gap is
+recorded in steps of 30 minutes, so a 30-minute threshold forbids exactly one thing: a rental
+starting the very minute the previous one ends.
 
-### Every threshold is a price, and the price only rises
+### Q3 — 12.6% of chained pairs overlap, and long overlaps go with cancellations
 
-![Threshold and scope](images/3_threshold_and_scope.png)
+57.5% of drivers return the car late, but only **218 of the 1 729 measurable pairs (12.6%)** come
+back after the next check-in was due — 8.7% of Connect pairs, 15.9% of Mobile ones. When it
+happens, the next driver waits 26.5 minutes (median).
 
-| threshold | rentals blocked | severe cases prevented | blocked per case |
-|---|---|---|---|
-| 30 min | 261 (1.22%) | 28 of 66 | **9.3** |
-| **60 min** | **381 (1.79%)** | **36 of 66** | **10.6** |
-| 3 h | 828 (3.89%) | 54 of 66 | 15.3 |
-| 12 h | 1 606 (7.54%) | 65 of 66 | 24.7 |
+| overlap | pairs | next rental cancelled |
+|---|---|---|
+| none | 1 511 | 11.2% |
+| 0–30 min | 115 | 8.7% |
+| 30–60 min | 37 | 21.6% |
+| 1–2 h | 25 | 12.0% |
+| over 2 h | 41 | **39.0%** |
 
-The ratio rises monotonically. **There is no threshold at which this trade is efficient** — the
-question is not where the optimum sits but how much the company will pay per avoided incident, and
-the cheapest useful setting is the smallest one.
+Only the longest overlaps stand clearly apart, and the bands past half an hour rest on a few dozen
+pairs. It is a correlation: the file records neither the reason nor the date of a cancellation.
 
-**Sixty minutes, all cars** is the recommendation: 1.79% of rentals removed from search results,
-55% of the severe cases prevented.
+### Q4 — a threshold solves a part of the 218 cases
 
-### Connect concentrates the chaining, not the lateness
+At 30 minutes the rule solves **116 of the 218 problematic cases (53%)**; at 60 minutes, 146 (67%).
 
-|  | late at all | median delay | chained | severe overlaps |
+## The recommendation: 30 minutes, on all cars
+
+| threshold | ended rentals blocked | cases solved | blocked per case | extra blocked per extra case |
 |---|---|---|---|---|
-| **connect** | 42.9% | −9 min | **18.9%** of its rentals | 2.5% of its chained pairs |
-| **mobile** | 61.4% | +14 min | 6.1% of its rentals | 4.9% of its chained pairs |
+| **30 min** | **244** | **116** | **2.10** | 2.1 |
+| 60 min | 358 | 146 | 2.45 | 3.8 |
+| 90 min | 518 | 172 | 3.01 | 6.2 |
+| 2 h | 592 | 180 | 3.29 | 9.2 |
 
-Connect drivers open the car with a phone and nobody waits for a handover, and it shows in every
-column. Narrowing the feature to Connect aims it at the punctual half of the fleet: 177 blocked
-rentals for 10 severe cases, **17.7 per case against 10.6**.
+30 minutes is the cheapest step on the curve: 1.35% of ended rentals for half the problematic
+cases. **There is no elbow beyond it**: the average cost per case rises at every threshold, and
+every later step costs at least 3.8 blocked rentals per extra case. Whether a longer threshold is
+worth it is a price the company sets, not a result of this data.
 
-### The price is the car, not the equipment
+**All cars, rather than one check-in type.** At 30 minutes, Connect-only costs 2.73 blocked
+rentals per case solved, Mobile-only 1.78, all cars 2.10. Connect drivers overlap the next check-in
+less often, so Connect-only is the most expensive scope per case; Mobile-only is the cheapest, but
+leaves all 69 Connect cases unsolved.
+
+What the data cannot say: whether a blocked driver books another slot or another car (the cost is
+an upper bound), and whether a solved case stays solved if that driver rebooks the same car.
+
+## The pricing model
+
+`training/train.py` evaluates **39 candidates, one MLflow run each**, on the same split and the
+same five folds: the median price as a baseline, a linear regression, a random forest, and a
+gradient boosting over a grid of 36 combinations. The winner is chosen on **cross-validated MAE**
+— measured on the training split only, so that its held-out MAE stays honest for the comparison
+`promote.py` makes with the champion.
+
+| model | CV MAE | test MAE |
+|---|---|---|
+| the median price of every car | €23.44 | €24.13 |
+| linear regression | €12.34 | €12.41 |
+| random forest | €10.59 | €10.88 |
+| **gradient boosting** (learning_rate 0.05, 400 iterations, 31 leaves, 10 per leaf) | **€10.34** | **€10.59** |
+
+MAE because it reads in euros, as an owner thinks about a price, and because a handful of unusual
+cars cannot dominate it the way they would dominate an RMSE. Half the cars are priced within
+**€7.12**.
 
 ![Feature importance](images/4_feature_importance.png)
 
-The pricing model is a tuned gradient-boosting regressor: **€10.59 of average error on a median
-price of €120**, half the cars within €7.12, against €24.13 for charging every car the same.
-
-| model | CV R² | test MAE |
-|---|---|---|
-| the median price of every car | −0.009 | €24.13 |
-| linear regression | 0.697 | €12.41 |
-| random forest | 0.748 | €10.88 |
-| **gradient boosting, tuned** | **0.762** | **€10.59** |
-
-`engine_power` and `mileage` carry **75% of the model**; the seven equipment booleans and the paint
-colour together are 9.9%. Fitted on the car's own characteristics alone it reaches CV R² 0.717;
-adding everything the owner controls takes it to 0.755 — under four points. Those options fitted
-*alone* reach 0.344.
-
-`/predict` therefore answers **"what is my car worth"**, not "what should I change". That is the
-right answer for an owner setting a price, and the wrong one to sell as an optimiser.
-
-## What Getaround should do
-
-1. **Set the buffer to 60 minutes, on all cars.** 1.79% of rentals, 55% of the cases where the
-   cancellation rate actually moves.
-2. **Do not restrict the scope to Connect** — it is the punctual half of the fleet, and its cars
-   rent for 19% more, so each blocked rental costs more too.
-3. **Expect the feature to be small.** Its whole target is 66 rentals in 21 310. Worth shipping
-   because a driver standing in the street is a bad experience, not because the numbers are large.
-4. **Log three columns and this becomes a revenue analysis:** `car_id` in the pricing export, and
-   the rental's start and end.
-5. **Present `/predict` as a market rate**, because that is what it is.
+`engine_power` and `mileage` carry **75% of the model**; the seven equipment options and the
+colour together under 10% (see the notebook). Fitted on the car's own characteristics alone it
+reaches CV R² 0.717; adding everything the owner controls takes it to 0.755. `/predict` therefore
+answers **"what is my car worth"**, not "what should I change" — a market rate, and it should be
+presented as one.
 
 ## Running it locally
 
@@ -207,33 +201,37 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
 
-Open `getaround_analysis.ipynb` and select the `.venv` kernel. It executes end to end in about a
-minute, needs no credential and no network, and writes the four figures to `images/`.
-
-Charts render as static images so the notebook stays readable on GitHub, which strips interactive
-plotly output; the same PNGs are written to `images/`. If `kaleido` cannot find a browser, run
-`.venv/bin/plotly_get_chrome`. Everything is seeded on `RANDOM_STATE = 42`, so a re-run reproduces
-every number above.
-
-Registering a model needs the MLflow stack, so it needs credentials:
+**Dashboard.** Its Pricing page calls the API at `PRICING_API_URL`, the online Space by default:
 
 ```bash
-cp .env.example .env          # then fill in your own
+.venv/bin/pip install -r dashboard/requirements.txt
+.venv/bin/streamlit run dashboard/app.py
+```
+
+**API and training** need the MLflow stack, so they need credentials:
+
+```bash
+cp .env.example .env                              # then fill in your own
 .venv/bin/pip install -r training/requirements.txt
-.venv/bin/python training/train.py
+.venv/bin/python training/train.py                # 39 runs, winner registered as @challenger
+.venv/bin/python training/promote.py              # review, then @champion if it is better
 ```
 
-`train.py` is idempotent in the sense that matters: re-running it creates a **new version** of the
-registered model and moves `champion` to it. It never overwrites a version.
+`train.py` never overwrites a version and never touches `champion`; `promote.py` moves `champion`
+only when the challenger's held-out MAE is lower, and says so either way.
 
-Each service is built from its own directory, and both need the same `.env`:
+**Both services in Docker**, the dashboard calling the API container:
 
 ```bash
-docker build -t getaround-api api/             && docker run --rm -p 8000:7860 --env-file .env getaround-api
-docker build -t getaround-dashboard dashboard/ && docker run --rm -p 8501:7860 getaround-dashboard
+docker network create getaround
+docker build -t getaround-api api/
+docker build -t getaround-dashboard dashboard/
+docker run -d --name api --network getaround -p 8000:7860 --env-file .env getaround-api
+docker run -d --network getaround -p 8501:7860 -e PRICING_API_URL=http://api:7860 getaround-dashboard
 ```
 
-The dashboard needs no credential — it reads a file shipped in its own image.
+**Code style.** `.venv/bin/flake8 dashboard/ api/ training/` checks PEP8, with the line limit
+raised to 99 in `.flake8`.
 
 ## Security
 

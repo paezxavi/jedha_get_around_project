@@ -48,7 +48,7 @@ script, and cannot drift.
 ### Response
 
 ```json
-{"prediction": [107.94]}
+{"prediction": [107.91]}
 ```
 
 One price in euros per day, per car sent, in the same order.
@@ -59,7 +59,13 @@ never saw is encoded as "infrequent" rather than raising, so the endpoint answer
 ## Accuracy, and how to read it
 
 On a held-out fifth of the data the model is wrong by **€10.59 on average** and by **€7.12 for half
-the cars**, against a median price of €120. Charging every car the same price is wrong by €24.13.
+the cars**. Charging every car the median price is wrong by €24.13. `/docs` shows these figures
+read live from the served model's MLflow run, and `/health` returns its `test_mae`.
+
+## Errors
+
+A car that does not hold 13 values, or a value that cannot be read as its column's type, is
+answered with a **422** and a message naming the problem — never with a 500.
 
 ## Known limitation
 
@@ -73,7 +79,7 @@ answer for an owner setting a price, and the wrong one to present as an optimise
 
 ## Configuration
 
-Five Space **secrets**, all of them credentials for the shared MLflow stack:
+Five Space **secrets**, all of them credentials for this project's MLflow stack:
 `MLFLOW_TRACKING_URI`, `MLFLOW_TRACKING_TOKEN`, `MLFLOW_S3_ENDPOINT_URL`, `AWS_ACCESS_KEY_ID`,
 `AWS_SECRET_ACCESS_KEY`. Two Space **variables** name the model rather than granting access to it:
 `MLFLOW_REGISTERED_MODEL_NAME` and `MLFLOW_MODEL_ALIAS`. The app reads all of them at startup and
