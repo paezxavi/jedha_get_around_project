@@ -6,5 +6,7 @@
 # clients answers with fields they will not read.
 mlflow==3.15.2
 psycopg2-binary==2.9.12   # PostgreSQL driver for the Neon backend store
+sqlalchemy==2.0.52        # 2.1 switched postgresql:// to the psycopg 3 driver, which is not
+                          # installed: the server then dies at startup
 boto3==1.43.36            # S3 access for the artifact store
 gunicorn==23.0.0
