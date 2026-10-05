@@ -54,7 +54,7 @@ BOOLEAN = ["private_parking_available", "has_gps", "has_air_conditioning", "auto
 FEATURES = NUMERIC + CATEGORICAL + BOOLEAN
 TARGET = "rental_price_per_day"
 
-# The gradient boosting grid of the notebook, section 6.2: 2 x 2 x 3 x 3 = 36 combinations.
+# The gradient boosting grid of the notebook, section 1.2: 2 x 2 x 3 x 3 = 36 combinations.
 GRID = {
     "learning_rate": [0.05, 0.1],
     "max_iter": [200, 400],

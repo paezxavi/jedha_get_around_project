@@ -1,8 +1,7 @@
 """Delay analysis page: the minimum delay between two rentals.
 
 The page answers the product manager's four questions, one section each, then puts cost (Q2)
-against benefit (Q4) to recommend a threshold and a scope. It holds no model and calls no API;
-getaround_analysis.ipynb is kept beside it as an annex.
+against benefit (Q4) to recommend a threshold and a scope. It holds no model and calls no API.
 
 Everything is recomputed from the raw file on every interaction. That is affordable here --
 21 310 rows, one pandas pass -- and it means no number on the page can be a stale constant.
@@ -429,7 +428,6 @@ st.markdown(
 st.divider()
 st.caption(
     f"Built from `get_around_delay_analysis.xlsx` — {len(delay):,} rentals.".replace(",", " ")
-    + " The exploratory analysis is "
-    "kept as an annex in `getaround_analysis.ipynb`. The pricing model asked for by the same "
-    "brief is served by a separate API Space, documented at its `/docs`."
+    + " The pricing model asked for by the same brief is on the Pricing page, which calls a "
+    "separate API Space documented at its `/docs`."
 )

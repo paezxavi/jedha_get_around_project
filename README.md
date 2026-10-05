@@ -170,8 +170,8 @@ an upper bound), and whether a solved case stays solved if that driver rebooks t
 ## The pricing model
 
 `training/train.py` evaluates **39 candidates, one MLflow run each**, on the same split and the
-same five folds: the median price as a baseline, a linear regression, a random forest, and a
-gradient boosting over a grid of 36 combinations. The winner is chosen on **cross-validated MAE**
+same five folds: the median price as a baseline, a linear regression, a random forest at its
+defaults, and a gradient boosting over a grid of 36 combinations. The winner is chosen on **cross-validated MAE**
 — measured on the training split only, so that its held-out MAE stays honest for the comparison
 `promote.py` makes with the champion.
 
