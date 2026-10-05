@@ -60,7 +60,8 @@ never saw is encoded as "infrequent" rather than raising, so the endpoint answer
 
 On a held-out fifth of the data the model is wrong by **€10.61 on average** and by **€6.77 for half
 the cars**. Charging every car the median price is wrong by €23.49. `/docs` shows these figures
-read live from the served model's MLflow run, and `/health` returns its `test_mae`.
+read live from the served model's MLflow run, with its registered name and version; `/health`
+returns the same, which is what the dashboard's Pricing page displays.
 
 ## Errors
 

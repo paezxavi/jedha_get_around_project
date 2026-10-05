@@ -57,7 +57,8 @@ and a Neon database and an R2 bucket that belong to this project alone.
   dtypes from the model's logged signature; the dashboard's Pricing page reads the same order
   from the API's `/health`. Neither holds a list of columns of its own.
 - **No figure on `/docs` is typed by hand.** The API reads the champion's error from its own
-  MLflow run at startup, so the page describes the model actually served.
+  MLflow run at startup, so the page describes the model actually served. Its registered name,
+  version and run are shown there and on the dashboard's Pricing page.
 - **The served versions are pinned.** scikit-learn is pinned in the model's `pip_requirements` and
   in `api/requirements.txt`, and so is `skops`, the library MLflow stores the model with: 0.16
   refuses by default to load a gradient boosting that 0.14 loads, and a later training may

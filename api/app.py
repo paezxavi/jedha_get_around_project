@@ -43,6 +43,9 @@ FEATURES = None
 DTYPES = None
 # The champion's held-out MAE, read from its run: /health hands it to the dashboard.
 TEST_MAE = None
+# Which registered version is in memory, and the run that produced it: shown on /docs and
+# handed to the dashboard by /health.
+SERVED = None
 
 # Two real rows of the training file, used as the example in /docs and in the README so a
 # visitor can copy one and get an answer without inventing thirteen values.
@@ -65,6 +68,8 @@ DESCRIPTION = Template("""
 
 Suggests a **daily rental price in euros** for a car, learned from the $rows cars in
 Getaround's pricing dataset.
+
+**Model served:** `$name` version $version (`@$alias`) — $run
 
 On a held-out fifth of that data the model is wrong by **€$mae on average**, and by **€$median
 for half the cars**. Charging every car the median price is wrong by €$baseline.
@@ -133,8 +138,8 @@ message naming the problem, never with a 500.
 
 ## `GET /health`
 
-Liveness, plus which model URI was loaded, whether it is in memory, the 13 columns in
-order and the model's held-out MAE in euros.
+Liveness, plus which model is in memory — its registered name, version and run — the 13
+columns in order and the model's held-out MAE in euros.
 
 ## `GET /`
 
@@ -148,7 +153,7 @@ async def lifespan(app: FastAPI):
     # here is the intended behaviour: nothing else is running yet, and an API that starts
     # without a model would only answer opaque 500s. No try/except on purpose -- a failure
     # must kill the process with its traceback rather than serve a broken endpoint.
-    global MODEL, FEATURES, DTYPES, TEST_MAE
+    global MODEL, FEATURES, DTYPES, TEST_MAE, SERVED
 
     print(f"Loading {MODEL_URI} ...")
     MODEL = mlflow.pyfunc.load_model(MODEL_URI)
@@ -165,6 +170,12 @@ async def lifespan(app: FastAPI):
     client = MlflowClient()
     run = client.get_run(MODEL.metadata.run_id)
     TEST_MAE = run.data.metrics["test_mae"]
+    # The version is found from the run of the model in memory, not from the alias: the alias
+    # can move after startup, and this must keep describing what is actually served.
+    versions = [v.version for v in client.search_model_versions(f"run_id='{run.info.run_id}'")
+                if v.name == REGISTERED_MODEL_NAME]
+    SERVED = {"name": REGISTERED_MODEL_NAME, "alias": MODEL_ALIAS,
+              "version": versions[0] if versions else None, "run_name": run.info.run_name}
     baseline = client.search_runs(
         [run.info.experiment_id],
         filter_string="attributes.run_name = 'median price (baseline)'",
@@ -174,6 +185,8 @@ async def lifespan(app: FastAPI):
         mae=f"{run.data.metrics['test_mae']:.2f}",
         median=f"{run.data.metrics['test_median_abs_error']:.2f}",
         baseline=f"{baseline[0].data.metrics['test_mae']:.2f}" if baseline else "n/a",
+        name=SERVED["name"], version=SERVED["version"], alias=SERVED["alias"],
+        run=SERVED["run_name"],
     )
 
     yield
@@ -218,6 +231,7 @@ def health():
         "model_loaded": MODEL is not None,
         "features": FEATURES,
         "test_mae": TEST_MAE,
+        "model": SERVED,
     }
 
 

@@ -3,7 +3,8 @@
 The page holds no model. It sends the car to the pricing API exactly as curl would, and shows
 what comes back -- that call is the point of the page. Two things it never writes itself:
   - the column order, read from the API's /health, which reads it from the model's signature;
-  - the model's error, read from the same /health, which reads it from the champion's run.
+  - the model served and its error, read from the same /health, which reads them from the
+    champion's run in the MLflow registry.
 
 The dropdowns are filled from the pricing file shipped in this image, so every choice offered
 is a value the model was trained on.
@@ -40,9 +41,9 @@ def load_cars():
     return pd.read_csv(DATA)
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def api_contract():
-    """The column order and the model's MAE, as the API reports them on /health."""
+    """The column order, the model served and its MAE, as the API reports them on /health."""
     health = requests.get(f"{API_URL}/health", timeout=TIMEOUT)
     health.raise_for_status()
     return health.json()
@@ -95,6 +96,10 @@ if submitted:
 
     price = response.json()["prediction"][0]
     st.metric("Suggested daily price", f"€{price:.2f}")
+    served = contract.get("model")
+    if served:
+        st.caption(f"Served by `{served['name']}` version {served['version']} "
+                   f"(`@{served['alias']}`) — {served['run_name']}")
     if contract.get("test_mae") is not None:
         st.caption(
             f"The market rate for a car like this one, as owners price it. On cars it never "
