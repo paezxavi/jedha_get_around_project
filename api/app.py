@@ -122,7 +122,7 @@ response = requests.post(
     json={"input": [[140411, 100, "Citroën", "diesel", "black", "convertible",
                      True, True, False, False, True, True, True]]},
 )
-print(response.json())      # {"prediction": [107.91]}
+print(response.json())      # {"prediction": [110.21]}
 ```
 
 **Errors** — a car that does not hold 13 values, or a value that cannot be read as its
@@ -198,7 +198,7 @@ class PredictionInput(BaseModel):
 
 
 class PredictionOutput(BaseModel):
-    prediction: list[float] = Field(..., examples=[[107.91, 264.38]])
+    prediction: list[float] = Field(..., examples=[[110.21, 239.31]])
 
 
 # Plumbing, not an endpoint: HF serves the Space at "/", and without this a visitor lands on

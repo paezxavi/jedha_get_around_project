@@ -27,7 +27,7 @@ there. The dashboard answers each one in its own section, then weighs cost again
 
 ```mermaid
 flowchart LR
-    C[("get_around_pricing_project.csv<br/>4 843 cars")] --> T["training/train.py<br/>39 candidate runs"]
+    C[("get_around_pricing_project.csv<br/>4 843 cars")] --> T["training/train.py<br/>56 candidate runs"]
     T -->|params, metrics| N[("Neon<br/>PostgreSQL")]
     T -->|winner's model| R[("Cloudflare R2")]
     T -->|"alias @challenger"| M["MLflow server<br/>private Docker Space"]
@@ -60,7 +60,8 @@ and a Neon database and an R2 bucket that belong to this project alone.
   MLflow run at startup, so the page describes the model actually served.
 - **The served versions are pinned.** scikit-learn is pinned in the model's `pip_requirements` and
   in `api/requirements.txt`, and so is `skops`, the library MLflow stores the model with: 0.16
-  refuses by default to load a gradient-boosting model that 0.14 loads.
+  refuses by default to load a gradient boosting that 0.14 loads, and a later training may
+  well register one.
 - **The dashboard's delay page holds no model.** It is pure pandas over a file shipped in its image,
   and recomputes every number on each interaction — none of them can be a stale constant.
 - MLflow runs with `--no-serve-artifacts`: the model bytes travel **straight from R2** to the API,
@@ -169,28 +170,39 @@ an upper bound), and whether a solved case stays solved if that driver rebooks t
 
 ## The pricing model
 
-`training/train.py` evaluates **39 candidates, one MLflow run each**, on the same split and the
-same five folds: the median price as a baseline, a linear regression, a random forest in a
-single configuration, and a gradient boosting over a grid of 36 combinations. The winner is chosen on **cross-validated MAE**
-— measured on the training split only, so that its held-out MAE stays honest for the comparison
-`promote.py` makes with the champion.
+**What is cleaned.** Only the two rows no car can have are removed: a mileage of −64 km and an
+engine of 0 hp, 0.04% of the file. A mileage of 1 000 376 km and two cars at 25 hp are kept and
+named as possible typing errors: a possible value cannot be told from a wrong one in this file.
+
+![Values that sit apart](images/1_values_apart.png)
+
+**How the model is chosen.** `training/train.py` evaluates **56 candidates, one MLflow run each**,
+on the same split and the same five folds: the median price as a baseline, a linear regression,
+then a grid for each of the two ensembles — 18 random forests, 36 gradient boostings — so that
+neither is compared tuned against the other untuned. The winner is the lowest **cross-validated
+MAE**, measured on the training split only, so that the held-out MAE stays an honest figure to
+announce.
 
 | model | CV MAE | test MAE |
 |---|---|---|
-| the median price of every car | €23.44 | €24.13 |
-| linear regression | €12.34 | €12.41 |
-| random forest | €10.59 | €10.88 |
-| **gradient boosting** (learning_rate 0.05, 400 iterations, 31 leaves, 10 per leaf) | **€10.34** | **€10.59** |
+| the median price of every car | €23.61 | €23.49 |
+| linear regression | €12.36 | €12.18 |
+| **random forest**, best of 18 (max_features 0.5, max_depth 20) | **€10.42** | €10.61 |
+| gradient boosting, best of 36 | €10.50 | **€10.48** |
+
+**The two ensembles are tied.** The random forest is €0.08 ahead on cross-validated MAE, a
+fraction of what a model's MAE moves from one fold to the next, and the test set ranks them the
+other way round. The rule fixed in advance breaks the tie, the same way every time: the random
+forest ships. It is wrong by **€10.61 on average**, and half the cars are priced within **€6.77**.
 
 MAE because it reads in euros, as an owner thinks about a price, and because a handful of unusual
-cars cannot dominate it the way they would dominate an RMSE. Half the cars are priced within
-**€7.12**.
+cars cannot dominate it the way they would dominate an RMSE.
 
 ![Feature importance](images/4_feature_importance.png)
 
-`engine_power` and `mileage` carry **75% of the model**; the seven equipment options and the
-colour together under 10% (see the notebook). Fitted on the car's own characteristics alone it
-reaches CV R² 0.717; adding everything the owner controls takes it to 0.755. `/predict` therefore
+`engine_power` and `mileage` carry **77.5% of the model**; the seven equipment options and the
+colour together 11.1% (see the notebook). Fitted on the car's own characteristics alone it
+reaches CV R² 0.708; adding everything the owner controls takes it to 0.759. `/predict` therefore
 answers **"what is my car worth"**, not "what should I change" — a market rate, and it should be
 presented as one.
 
@@ -213,7 +225,7 @@ python3 -m venv .venv
 ```bash
 cp .env.example .env                              # then fill in your own
 .venv/bin/pip install -r training/requirements.txt
-.venv/bin/python training/train.py                # 39 runs, winner registered as @challenger
+.venv/bin/python training/train.py                # 56 runs, winner registered as @challenger
 .venv/bin/python training/promote.py              # review, then @champion if it is better
 ```
 

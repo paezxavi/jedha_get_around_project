@@ -48,7 +48,7 @@ script, and cannot drift.
 ### Response
 
 ```json
-{"prediction": [107.91]}
+{"prediction": [110.21]}
 ```
 
 One price in euros per day, per car sent, in the same order.
@@ -58,8 +58,8 @@ never saw is encoded as "infrequent" rather than raising, so the endpoint answer
 
 ## Accuracy, and how to read it
 
-On a held-out fifth of the data the model is wrong by **€10.59 on average** and by **€7.12 for half
-the cars**. Charging every car the median price is wrong by €24.13. `/docs` shows these figures
+On a held-out fifth of the data the model is wrong by **€10.61 on average** and by **€6.77 for half
+the cars**. Charging every car the median price is wrong by €23.49. `/docs` shows these figures
 read live from the served model's MLflow run, and `/health` returns its `test_mae`.
 
 ## Errors
@@ -69,10 +69,10 @@ answered with a **422** and a message naming the problem — never with a 500.
 
 ## Known limitation
 
-**75% of what the model knows comes from `engine_power` and `mileage`** — two columns an owner
-cannot change. The seven equipment options together account for under 10%. Fitted on the car's own
-characteristics alone it reaches CV R² 0.717; adding everything the owner controls takes it to
-0.755.
+**77.5% of what the model knows comes from `engine_power` and `mileage`** — two columns an owner
+cannot change. The seven equipment options and the colour together account for 11.1%. Fitted on
+the car's own characteristics alone it reaches CV R² 0.708; adding everything the owner controls
+takes it to 0.759.
 
 So this endpoint answers *"what is my car worth"*, not *"what should I change"*. It is the right
 answer for an owner setting a price, and the wrong one to present as an optimiser.

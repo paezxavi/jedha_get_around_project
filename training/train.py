@@ -2,8 +2,8 @@
 
 Five steps:
   1. point the client at the tracking server and pick the experiment
-  2. evaluate every candidate -- four models, the gradient boosting over a grid of 36
-     combinations -- one MLflow run each, all on the same split and the same folds
+  2. evaluate every candidate -- two references, then a grid for each of the two ensembles
+     -- one MLflow run each, all on the same split and the same folds
   3. pick the winner on cross-validated MAE, measured on the training split only
   4. refit the winner on every car, log it in its own run and register it
   5. point the `challenger` alias at the version just created
@@ -11,7 +11,7 @@ Five steps:
 This script never touches `champion`, the alias the API serves. Moving it is a separate and
 deliberate act, done by promote.py after a review of the runs.
 
-The winner is chosen on cross-validation, not on the test set: picking the best of 40 runs on
+The winner is chosen on cross-validation, not on the test set: picking the best of 56 runs on
 the test MAE would make that MAE optimistic, and promote.py needs it honest to compare a
 challenger with the champion.
 
@@ -54,8 +54,14 @@ BOOLEAN = ["private_parking_available", "has_gps", "has_air_conditioning", "auto
 FEATURES = NUMERIC + CATEGORICAL + BOOLEAN
 TARGET = "rental_price_per_day"
 
-# The gradient boosting grid of the notebook, section 1.2: 2 x 2 x 3 x 3 = 36 combinations.
-GRID = {
+# The two grids of the notebook, section 1.2. Each ensemble gets one, so that neither is
+# compared tuned against the other untuned: 3 x 3 x 2 = 18 and 2 x 2 x 3 x 3 = 36 combinations.
+FOREST_GRID = {
+    "max_features": [1.0, 0.5, "sqrt"],
+    "min_samples_leaf": [1, 3, 5],
+    "max_depth": [None, 20],
+}
+BOOSTING_GRID = {
     "learning_rate": [0.05, 0.1],
     "max_iter": [200, 400],
     "max_leaf_nodes": [15, 31, 63],
@@ -71,11 +77,13 @@ def candidates():
     """
     yield "median price (baseline)", DummyRegressor(strategy="median"), {"strategy": "median"}
     yield "linear regression", LinearRegression(), {}
-    yield ("random forest",
-           RandomForestRegressor(n_estimators=300, random_state=RANDOM_STATE, n_jobs=-1),
-           {"n_estimators": 300})
-    for values in itertools.product(*GRID.values()):
-        params = dict(zip(GRID, values))
+    for values in itertools.product(*FOREST_GRID.values()):
+        params = dict(zip(FOREST_GRID, values))
+        name = "random forest " + " ".join(f"{k}={v}" for k, v in params.items())
+        yield (name, RandomForestRegressor(n_estimators=300, random_state=RANDOM_STATE,
+                                           n_jobs=-1, **params), {"n_estimators": 300, **params})
+    for values in itertools.product(*BOOSTING_GRID.values()):
+        params = dict(zip(BOOSTING_GRID, values))
         name = "gradient boosting " + " ".join(f"{k}={v}" for k, v in params.items())
         yield name, HistGradientBoostingRegressor(random_state=RANDOM_STATE, **params), params
 
@@ -112,11 +120,10 @@ def main():
 
     pricing = pd.read_csv(DATA).drop(columns=["Unnamed: 0"])
 
-    # Three physically impossible rows -- a mileage of -64 km, one of 1 000 376 km, and a
-    # zero-power engine. 0.06% of the file, too small to change a score; they go because
-    # serving a prediction fitted on a negative mileage is indefensible.
-    impossible = ((pricing["mileage"] < 0) | (pricing["mileage"] > 500_000)
-                  | (pricing["engine_power"] == 0))
+    # Only what no car can have is removed: a negative mileage, an engine without power. Two
+    # rows, 0.04% of the file. Values that are possible but may be typing errors (1 000 376 km,
+    # 25 hp) stay: the notebook, section 1.1, shows them.
+    impossible = (pricing["mileage"] < 0) | (pricing["engine_power"] == 0)
     clean = pricing[~impossible].reset_index(drop=True)
 
     X, y = clean[FEATURES], clean[TARGET]
