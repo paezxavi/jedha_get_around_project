@@ -27,9 +27,7 @@ The page answers the product manager's four questions, one section each:
    12.6% of chained pairs overlap; long overlaps go with far more cancellations.
 4. **How many problematic cases would a threshold solve?** The same curve, on the benefit side.
 
-It then puts cost against benefit and recommends **30 minutes, on all cars**: the cheapest step on
-the curve, after which there is no elbow — the average cost per case solved rises at every
-threshold.
+It then puts cost against benefit, threshold by threshold, for the chosen scope.
 
 Every number is recomputed from the raw 21 310-rental file on each interaction; the counting rules
 are written on the page next to the numbers they shape. This page holds no model.
