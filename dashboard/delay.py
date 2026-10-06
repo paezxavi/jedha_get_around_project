@@ -372,21 +372,6 @@ with st.expander(f"The same trade, threshold by threshold — {scope}"):
         for b, c in zip(extra["blocked"], extra["solved"])]
     st.dataframe(table.style.format({"blocked per case solved": "{:.2f}"}), width='stretch')
 
-st.subheader("What this cannot tell you")
-st.markdown(
-    """
-1. **A blocked rental is not a lost rental.** The file cannot say whether the driver booked
-   another slot or another car, so the cost above is an upper bound.
-2. **A solved case may not stay solved** if the blocked driver rebooks the same car at the
-   first allowed slot and the previous driver is later than the buffer (Q4).
-3. **The cancellations are a correlation.** The file records neither the reason nor the date
-   of a cancellation (Q3).
-4. **The file caps the gap at 12 hours**, so nothing beyond that is measurable.
-5. **{blind} chained pairs have no recorded previous checkout** and are left out of Q3 and Q4
-   rather than imputed.
-""".format(blind=len(pairs) - len(measurable))
-)
-
 st.divider()
 st.caption(
     f"Built from `get_around_delay_analysis.xlsx` — {len(delay):,} rentals.".replace(",", " ")
