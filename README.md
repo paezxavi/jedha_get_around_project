@@ -72,7 +72,7 @@ and a Neon database and an R2 bucket that belong to this project alone.
 
 ```
 dashboard/app.py            the two pages of the web app
-dashboard/delay.py          page 1 — the four questions and the recommendation
+dashboard/delay.py          page 1 — the four questions, then cost against benefit
 dashboard/pricing.py        page 2 — a form whose car is priced by the /predict API
 dashboard/data/             the delay file and the pricing file, shipped in the image
 api/                        FastAPI /predict service          (Docker Space)

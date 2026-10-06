@@ -1,7 +1,7 @@
 """Delay analysis page: the minimum delay between two rentals.
 
 The page answers the product manager's four questions, one section each, then puts cost (Q2)
-against benefit (Q4) to recommend a threshold and a scope. It holds no model and calls no API.
+against benefit (Q4) for every threshold and scope. It holds no model and calls no API.
 
 Everything is recomputed from the raw file on every interaction. That is affordable here --
 21 310 rows, one pandas pass -- and it means no number on the page can be a stale constant.
@@ -23,7 +23,7 @@ SCOPES = {"all cars": None, "Connect cars only": "connect", "Mobile cars only": 
 SCOPE_COLORS = {"all cars": BLUE, "Connect cars only": "#eb6834", "Mobile cars only": "#1baf7a"}
 
 # time_delta only takes multiples of 30 minutes, so the curves step every 30 minutes up to the
-# 12-hour cap of the file. The recommended threshold is the one the last section argues for.
+# 12-hour cap of the file. The slider opens on 30 minutes, the recommended threshold.
 GAPS = list(range(0, 721, 30))
 RECOMMENDED = 30
 
@@ -326,8 +326,8 @@ st.caption(
 
 st.divider()
 
-# ---------------------------------------------------------------- the recommendation
-st.header("Recommendation")
+# ---------------------------------------------------------------- cost against benefit
+st.header("Cost against benefit")
 
 # Cost (Q2) against benefit (Q4), one point per threshold. If a threshold stood out, the curve
 # would bend sharply there; the marginal column of the table is the check that it does not.
@@ -371,44 +371,6 @@ with st.expander(f"The same trade, threshold by threshold — {scope}"):
         f"{b / c:.1f}" if c > 0 else "no extra case"
         for b, c in zip(extra["blocked"], extra["solved"])]
     st.dataframe(table.style.format({"blocked per case solved": "{:.2f}"}), width='stretch')
-
-rec = {s: cost_and_benefit(s, RECOMMENDED) for s in SCOPES}
-rec_problems = {s: len(of_scope(measurable[is_problem], s)) for s in SCOPES}
-step_blocked, step_solved = (b - a for a, b in zip(rec["all cars"],
-                                                   cost_and_benefit("all cars", 60)))
-# Average cost per case at every threshold, and the cheapest price of any step past the
-# recommended one: the two facts the "no elbow" sentence rests on.
-avg = pd.DataFrame([cost_and_benefit("all cars", t) for t in GAPS[1:]],
-                   index=GAPS[1:], columns=["blocked", "solved"])
-avg_rises = bool((avg["blocked"] / avg["solved"]).is_monotonic_increasing)
-steps = avg.diff().loc[RECOMMENDED + 30:]
-cheapest_later_step = (steps["blocked"] / steps["solved"].where(steps["solved"] > 0)).min()
-
-st.success(
-    f"**{RECOMMENDED} minutes, on all cars.** Since the file records gaps in steps of 30 "
-    f"minutes, this forbids exactly one thing: a rental starting the very minute the previous "
-    f"one ends. It blocks {rec['all cars'][0]} ended rentals "
-    f"({rec['all cars'][0] / is_ended.sum():.2%}) and solves {rec['all cars'][1]} of the "
-    f"{rec_problems['all cars']} problematic cases "
-    f"({rec['all cars'][1] / rec_problems['all cars']:.0%}), at "
-    f"{rec['all cars'][0] / rec['all cars'][1]:.2f} rentals blocked per case — the cheapest step "
-    f"on the curve. **There is no elbow beyond it**: the average cost per case "
-    f"{'rises at every threshold' if avg_rises else 'does not fall below it'}, and every later "
-    f"step costs at least {cheapest_later_step:.1f} rentals per extra case. Going to 60 minutes "
-    f"would block {step_blocked} more rentals for {step_solved} more cases, "
-    f"{step_blocked / step_solved:.1f} each. Whether that is worth it is a price the company "
-    f"sets, not a result of this data."
-)
-
-st.info(
-    f"**Why all cars and not one check-in type.** At {RECOMMENDED} minutes, Connect-only "
-    f"costs {rec['Connect cars only'][0] / rec['Connect cars only'][1]:.2f} rentals blocked per "
-    f"case solved, Mobile-only {rec['Mobile cars only'][0] / rec['Mobile cars only'][1]:.2f}, "
-    f"all cars {rec['all cars'][0] / rec['all cars'][1]:.2f}. Connect drivers overlap the next "
-    f"check-in less often (Q3), so Connect-only is the most expensive scope per case. "
-    f"Mobile-only is the cheapest, but it leaves all {rec_problems['Connect cars only']} Connect "
-    f"cases unsolved."
-)
 
 st.subheader("What this cannot tell you")
 st.markdown(
